@@ -1,3 +1,5 @@
+Here's how you can add the requested information to your README:
+
 ```md
 # AI Scheduling Assistant: User Guide
 
@@ -71,16 +73,30 @@ pip install transformers datetime pytz dateutil gradio
    create a recurring meeting every Monday from 10 AM to 11 AM
    ```
 
-## Notes
+## Technical Approach and AI Algorithms Used
 
-- The assistant currently uses DistilBERT for natural language processing, which allows it to understand basic requests.
-- Timezone information can be specified using standard formats (e.g., "10 AM PST", "3 PM UTC").
-- You can exit the command-line interface by typing `exit`.
+The AI Scheduling Assistant uses the DistilBERT model for natural language processing. DistilBERT is a lightweight version of the BERT model, which allows the assistant to understand basic requests and commands.
 
-## Additional Information
+## User Engagement
 
-For more detailed information about the code and its functionalities, refer to the comments within the Python script.
-The script currently saves events to a text file (`events.txt`). You can modify the save logic to integrate with your preferred calendar application.
+The system engages with users through a command-line interface or an optional interactive web interface powered by the Gradio library. Users can input their requests in natural language, and the assistant processes these requests to manage their schedule.
+
+## Innovative Features and Methods
+
+- The assistant understands natural language commands, making it easy for users to interact with the system without needing to learn complex syntax.
+- It supports recurring events, allowing users to schedule events that repeat at regular intervals.
+
+## Limitations
+
+- The assistant's understanding of natural language is limited to basic commands and may not handle complex requests or edge cases effectively.
+- The system's ability to handle timezone information is based on standard formats and may not cover all possible timezone scenarios.
+
+## Additional Features for Improvement
+
+- Integration with a calendar API to synchronize events with external calendars.
+- Support for more advanced scheduling features, such as setting reminders or notifications for events.
+- Improved natural language understanding to handle a wider range of commands and requests.
 
 This user guide provides a basic overview of how to use the AI Scheduling Assistant. Feel free to explore its functionality.
+
 ```
