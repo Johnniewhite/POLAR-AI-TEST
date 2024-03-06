@@ -1,4 +1,3 @@
-Here's how you can add the requested information to your README:
 
 ```md
 # AI Scheduling Assistant: User Guide
