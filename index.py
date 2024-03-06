@@ -1,6 +1,6 @@
+import gradio as gr
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 import torch
-from icalendar import Calendar, Event
 import datetime
 import re
 import os
@@ -11,28 +11,21 @@ import dateutil.parser
 model = AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased")
 tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
 
-# Initialize a Calendar object
-c = Calendar()
+# Initialize an empty list to store events
+events = []
 
 # Load events from file if it exists
-if os.path.isfile("events.ics"):
-    with open("events.ics", "rb") as f:
-        ical_string = f.read().decode('utf-8')
-        events = []
-        cal = Calendar.from_ical(ical_string)
-        for component in cal.walk():
-            if component.name == 'VEVENT':
-                event = Event()
-                event.name = component.get('SUMMARY', '')
-                if component.get('DTSTART'):
-                    event.begin = component.get('DTSTART').dt
-                if component.get('DTEND'):
-                    event.end = component.get('DTEND').dt
-                events.append(event)
-                print(f"Loaded event: {event.name} ({event.begin} - {event.end})")
-        for event in events:
-            c.add_component(event)
-
+if os.path.isfile("events.txt"):
+    with open("events.txt", "r") as f:
+        for line in f:
+            event_data = line.strip().split("|")
+            if len(event_data) == 4:
+                name, start_str, end_str, recurring = event_data
+                start = dateutil.parser.parse(start_str)
+                end = dateutil.parser.parse(end_str)
+                is_recurring = (recurring.lower() == "true")
+                events.append({"name": name, "start": start, "end": end, "recurring": is_recurring})
+                print(f"Loaded event: {name} ({start} - {end})")
 
 def generate_response(prompt):
     """
@@ -44,53 +37,51 @@ def generate_response(prompt):
 
 def list_events(start, end):
     """
-    List events between start and end times.
+    List events for the day between start and end times.
     """
-    events = []
-    for component in c.walk():
-        if component.name == 'VEVENT':
-            event = Event()
-            event.name = component.get('SUMMARY', '')
-            event_start = component.get('DTSTART').dt
-            event_end = component.get('DTEND').dt
-            if event_end is None:
-                event_end = event_start + datetime.timedelta(days=1)
-            if event_start >= start and event_end <= end:
-                events.append(event)
-    if not events:
+    event_summaries = []
+    for event in events:
+        event_start = event["start"]
+        event_end = event["end"]
+        if event_start.tzinfo is None:
+            event_start = pytz.utc.localize(event_start)
+        if event_end.tzinfo is None:
+            event_end = pytz.utc.localize(event_end)
+        if start <= event_start < end:
+            event_summaries.append(f"{event['name']} ({event_start.strftime('%I:%M %p')} - {event_end.strftime('%I:%M %p')})")
+    if not event_summaries:
         return "There are no events presently."
-    event_summaries = [f"{event.name} ({event_start.strftime('%I:%M %p')} - {event_end.strftime('%I:%M %p')})" for event in events]
     return ", ".join(event_summaries)
 
-def create_event(summary, start, end):
+def create_event(summary, start, end, recurring=False):
     """
-    Create a new event in the calendar.
+    Create a new event.
     """
-    tz = pytz.timezone("UTC")  # or any other timezone you prefer
-    event = Event()
-    event.name = summary
-    event.begin = tz.localize(start)
-    event.end = tz.localize(end)
-    c.events.add(event)
+    event = {"name": summary, "start": start, "end": end, "recurring": recurring}
+    events.append(event)
     save_events()
+    return f"Event '{summary}' has been scheduled from {start.strftime('%I:%M %p')} to {end.strftime('%I:%M %p')}."
 
 def save_events():
     """
-    Save events to an .ics file.
+    Save events to a text file.
     """
-    ical_string = c.to_ical()
-    with open("events.ics", "wb") as f:
-        f.write(ical_string.encode('utf-8'))  # Encode as bytes for binary write
+    with open("events.txt", "w") as f:
+        for event in events:
+            start_str = event["start"].strftime("%Y-%m-%d %H:%M:%S")
+            end_str = event["end"].strftime("%Y-%m-%d %H:%M:%S")
+            recurring_str = "True" if event["recurring"] else "False"
+            f.write(f"{event['name']}|{start_str}|{end_str}|{recurring_str}\n")
 
 def process_input(user_input):
     """
     Process the user input and perform the corresponding action.
     """
     if any(keyword in user_input.lower() for keyword in ["schedule", "create"]):
-        summary, start, end = extract_event_details(user_input)
+        summary, start, end, recurring = extract_event_details(user_input)
         if summary and start and end:
-            create_event(summary, start, end)
-            return f"Event '{summary}' has been scheduled from {start.strftime('%I:%M %p')} to {end.strftime('%I:%M %p')}."
+            response = create_event(summary, start, end, recurring)
+            return response
         else:
             return "I'm sorry, I couldn't understand the event details. Please try again."
 
@@ -103,11 +94,9 @@ def process_input(user_input):
     else:
         return "I'm sorry, I didn't understand your request. Please try again."
 
-
-
 def extract_event_details(user_input):
     """
-    Extract the event summary, start time, and end time from the user input.
+    Extract the event summary, start time, end time, and recurrence from the user input.
     """
     patterns = [
         r"(schedule|create)(.*?)from\s*(\d+:\d+\s*[aApP][mM])\s*to\s*(\d+:\d+\s*[aApP][mM])\s*tomorrow",
@@ -126,18 +115,14 @@ def extract_event_details(user_input):
                 tomorrow = datetime.date.today() + datetime.timedelta(days=1)
                 start = datetime.datetime.combine(tomorrow, datetime.datetime.strptime(start_str, "%I:%M %p").time())
                 end = datetime.datetime.combine(tomorrow, datetime.datetime.strptime(end_str, "%I:%M %p").time())
+                recurring = False
             elif match.group(6):
                 day_of_week = match.group(6).lower()
                 start = datetime.datetime.combine(datetime.date.today(), datetime.datetime.strptime(start_str, "%I:%M %p").time())
                 while start.strftime("%A").lower() != day_of_week:
                     start += datetime.timedelta(days=1)
                 end = start + datetime.timedelta(hours=int(end_str.split(":")[0]) - int(start_str.split(":")[0]), minutes=int(end_str.split(":")[1]) - int(start_str.split(":")[1]))
-                if match.group(7) == "every":
-                    end_of_week = start + datetime.timedelta(days=6)
-                    while start < end_of_week:
-                        create_event(summary, start, end)
-                        start += datetime.timedelta(days=7)
-                        end += datetime.timedelta(days=7)
+                recurring = (match.group(7) == "every")
             elif match.group(8):
                 ordinal = match.group(8).lower()
                 weekday = match.group(9).lower()
@@ -160,14 +145,10 @@ def extract_event_details(user_input):
                             break
                         count += 1
                 end = start + datetime.timedelta(hours=int(end_str.split(":")[0]) - int(start_str.split(":")[0]), minutes=int(end_str.split(":")[1]) - int(start_str.split(":")[1]))
-                if match.group(11) == "every":
-                    while end.strftime("%B").lower() == month:
-                        create_event(summary, start, end)
-                        start += datetime.timedelta(days=7)
-                        end += datetime.timedelta(days=7)
+                recurring = (match.group(11) == "every")
             start = pytz.utc.localize(start)
             end = pytz.utc.localize(end)
-            return summary, start, end
+            return summary, start, end, recurring
 
     # If the input doesn't match any pattern, try to parse it using dateutil
     try:
@@ -179,15 +160,16 @@ def extract_event_details(user_input):
         summary = "Event"
         start = pytz.utc.localize(start)
         end = pytz.utc.localize(end)
-        return summary, start, end
+        return summary, start, end, False
     except (ValueError, OverflowError):
         pass
 
-    return None, None, None
-# Example usage
-print("Welcome to the AI Scheduling Assistant!")
+    return None, None, None, False
 
-while True:
-    user_input = input("Enter your request: ")
+# Gradio interface
+def chat(user_input):
     response = process_input(user_input)
-    print(response)
+    return response
+
+iface = gr.Interface(chat, inputs="text", outputs="text", title="AI Scheduling Assistant")
+iface.launch()
